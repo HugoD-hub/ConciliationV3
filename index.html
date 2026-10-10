@@ -236,6 +236,15 @@ var VAC_SEC={id:'vac',title:'Vaccination',f:[{t:'vbtn'},
  .concat([{t:'text',k:'v_aut',l:'Autres vaccins'},
  {t:'many',k:'vsuite',sh:'Suite donnée',l:'Suite donnée',o:['Rattrapage à signaler au médecin','Patient informé','Patient refuse','Rien à proposer']},
  {t:'text',k:'vcom',l:'Commentaire vaccination'}])};
+var IX_SEC={id:'ix',title:'Interactions médicamenteuses',f:[
+ {t:'hint',l:'Analyse faite par vous : l\u2019outil ne détecte rien. Le Thésaurus ANSM n\u2019est plus mis à jour depuis 2023 ; l\u2019information de référence est dans le RCP de chaque médicament.'},
+ {t:'links'},
+ {t:'many',k:'ix_src',sh:'Sources consultées',l:'Sources consultées',o:['RCP (base publique)','Thériaque','Vidal','Thésaurus ANSM 2023','Autre']},
+ {t:'one',k:'ix_res',sh:'Résultat',l:'Résultat',o:['Aucune interaction relevée','Interaction(s) relevée(s)']},
+ {t:'area',k:'ix_list',sh:'Interactions relevées',l:'Interactions relevées (médicaments, mécanisme ou CYP, niveau)',show:show('ix_res','Interaction(s) relevée(s)')},
+ {t:'many',k:'ix_suite',sh:'Suite donnée',l:'Suite donnée',o:['Signalé au pharmacien','Signalé au médecin','À surveiller'],show:show('ix_res','Interaction(s) relevée(s)')},
+ {t:'text',k:'ix_com',l:'Commentaire'}
+]};
 var SEC_MED=[
 {id:'rec',title:'Recueil et patient',f:[
  {t:'date',k:'date',l:'Date',half:1},{t:'text',k:'par',l:'Recueil par',half:1},
@@ -311,6 +320,7 @@ VAC_SEC,
  {t:'area',k:'com',l:'Commentaires de conciliation'}
 ]},
 {id:'bil',title:'Bilan médicamenteux',f:[{t:'meds'}]},
+IX_SEC,
 {id:'inh',title:'Questionnaire inhalateurs',f:[
  {t:'hint',l:"D'après la fiche de [Dr NOM], docteure junior. À remplir si le questionnaire est réalisé."},
  {t:'one',k:'i_pat',l:'Pathologie principale',o:['Asthme','BPCO','Autre']},
@@ -400,7 +410,8 @@ VAC_SEC,
  {t:'text',k:'acho',l:'Score anticholinergique'},
  {t:'area',k:'com',l:'Commentaires de conciliation'}
 ]},
-SEC_MED.filter(function(x){return x.id==='bil'})[0]
+SEC_MED.filter(function(x){return x.id==='bil'})[0],
+IX_SEC
 ];
 var UF_MED=['1901','2134','2135','2385'],UF_CHIR=['5890','2331','5594'];
 function isChir(){return UF_CHIR.indexOf(S.uf)>=0}
@@ -414,6 +425,7 @@ var VIS=[];
 function field(f){
  var w;
  if(f.t==='hint'){w=el('p',{cls:'hint',text:f.l})}
+ else if(f.t==='links'){w=el('div',{cls:'vbtn'},[['RCP · base publique des médicaments','https://base-donnees-publique.medicaments.gouv.fr/'],['Thériaque','https://www.theriaque.org/'],['Thésaurus ANSM (archive 2023)','https://ansm.sante.fr/documents/reference/thesaurus-des-interactions-medicamenteuses-1']].map(function(x){return el('a',{cls:'ghost vlink',href:x[1],target:'_blank',rel:'noopener',text:x[0]})}))}
  else if(f.t==='vbtn'){w=el('div',{cls:'vbtn'},[el('button',{cls:'ghost',type:'button',text:'Voir le calendrier vaccinal 2026',onclick:openVac}),el('span',{cls:'sl',text:'Âge et calendrier côte à côte, sans analyse : la comparaison reste à faire par vous.'})])}
  else if(f.t==='src'){
   var ok=el('div',{cls:'chips'});
@@ -443,12 +455,13 @@ function medsField(){
  box.appendChild(el('button',{cls:'add',type:'button',text:'Ajouter un médicament',onclick:function(){MEDS.push(newMed());draw();var ins=list.querySelectorAll('.med');var last=ins[ins.length-1];if(last)last.querySelector('input').focus()}}));
  draw();return box;
 }
-function newMed(){return {dci:'',forme:'',dos:'',p:['','','',''],s:{D:'',P:'',A:'',O:'',M:''},v:{},st:'',rem:''}}
+function newMed(){return {dci:'',forme:'',dos:'',p:['','','',''],s:{D:'',P:'',A:'',O:'',M:''},v:{},st:'',rem:'',met:''}}
 function medInput(m,key,ph){var i=el('input',{cls:'t',type:'text',placeholder:ph,'aria-label':ph});i.value=m[key]||'';i.addEventListener('input',function(){m[key]=i.value;refresh()});return i}
 function medCard(m,ix,redraw){
  var c=el('div',{cls:'med'});
  c.appendChild(el('div',{cls:'medh'},[el('span',{cls:'idx',text:String(ix+1)}),medInput(m,'dci','DCI'),el('button',{cls:'del',type:'button','aria-label':'Supprimer la ligne '+(ix+1),text:'Suppr.',onclick:function(){MEDS.splice(ix,1);redraw()}})]));
  c.appendChild(el('div',{cls:'row3'},[medInput(m,'forme','Forme'),medInput(m,'dos','Dosage')]));
+ c.appendChild(medInput(m,'met','Métabolisme (hépatique ? CYP ? %)'));
  var po=el('div',{cls:'poso'});['M','Mi','S','N'].forEach(function(n,i){var inp=el('input',{cls:'t',type:'text',inputmode:'decimal','aria-label':'Posologie '+n});inp.value=m.p[i];inp.addEventListener('input',function(){m.p[i]=inp.value;refresh()});po.appendChild(el('label',{},[inp,el('span',{text:n})]))});
  c.appendChild(el('span',{cls:'sl',text:'Posologie (matin, midi, soir, nuit)'}));c.appendChild(po);
  c.appendChild(el('span',{cls:'sl',text:'Sources'}));
@@ -488,7 +501,7 @@ function render(){
 }
 function secCount(sec){
  if(sec.id==='bil')return MEDS.filter(function(m){return filled(m.dci)}).length+' méd.';
- var n=0;sec.f.forEach(function(f){if(f.t==='hint'||f.t==='vbtn')return;if(f.t==='src'){if(filled(S[f.k+'_ok'])||filled(S[f.k+'_c']))n++;return}if(filled(S[f.k]))n++});return n?n+' rempli'+(n>1?'s':''):'';
+ var n=0;sec.f.forEach(function(f){if(f.t==='hint'||f.t==='vbtn'||f.t==='links')return;if(f.t==='src'){if(filled(S[f.k+'_ok'])||filled(S[f.k+'_c']))n++;return}if(filled(S[f.k]))n++});return n?n+' rempli'+(n>1?'s':''):'';
 }
 function refresh(){VIS.forEach(function(v){v.e.hidden=!v.fn()});COUNTERS.forEach(function(c){c.e.textContent=secCount(c.sec)})}
 document.getElementById('pt').addEventListener('input',function(e){S.pt=e.target.value});
@@ -511,10 +524,10 @@ function buildText(){
    MEDS.forEach(function(m,i){if(!filled(m.dci))return;
     var srcs=SRC.map(function(s){var st=m.s[s];if(!st)return '';return s+':'+(st==='ok'?'ok':st==='abs'?'absent':(m.v[s]||'diff'))}).filter(Boolean).join(' ');
     var pos=m.p.some(filled)?m.p.map(function(x){return x||'0'}).join('-'):'';
-    out.push((i+1)+'. '+[m.dci,m.forme,m.dos,pos].filter(filled).join(' ')+(srcs?' | '+srcs:'')+(m.st?' | '+m.st:'')+(filled(m.rem)?' | '+m.rem.trim():''));
+    out.push((i+1)+'. '+[m.dci,m.forme,m.dos,pos].filter(filled).join(' ')+(srcs?' | '+srcs:'')+(filled(m.met)?' | métab : '+m.met.trim():'')+(m.st?' | '+m.st:'')+(filled(m.rem)?' | '+m.rem.trim():''));
    });
   } else sec.f.forEach(function(f){
-   if(f.t==='hint'||f.t==='vbtn')return;
+   if(f.t==='hint'||f.t==='vbtn'||f.t==='links')return;
    if(f.show&&!f.show())return;
    if(f.t==='src'){var o=S[f.k+'_ok'],c=noContact(S[f.k+'_c']);if(!filled(o)&&!filled(c))return;out.push(f.c+' '+f.l+' : '+(o||'?')+(filled(c)?' – '+c:''));return}
    var v=val(f);if(v)out.push((f.sh||f.l||'Observance')+' : '+v);
@@ -563,14 +576,14 @@ document.getElementById('demo').addEventListener('click',function(){
  var isChirDemo=isChir();
  S={pt:'12',date:'2026-10-06',par:'Externe DFASP2',h1:'09:10',h2:'09:40',incl:'> 65 ans + urgences + domicile',nom:'TEST Marie (fictif)',iep:'000000',ddn:'1944-05-02',chambre:'214',age:'82',sexe:'F',uf:'2134',entree:'2026-10-05',vie:'Domicile + aidant',all:'Aucune connue',
   sD_ok:'Obtenue',sP_ok:'Obtenue',sA1_ok:'Obtenue',sA1_c:'Fille',sA2_ok:'Non',sO_ok:'Obtenue',sO_c:'Pharmacie du quartier',sM1_ok:'Obtenue',
-  gere:'Famille',pil:'Oui',vsrc:['Patient','Mon espace santé'],v_dtp:'Ne sait pas',v_gr:'Fait',v_gr_y:'2025',v_co:'Fait',v_co_y:'2024, 4 doses',v_pn:'Non fait',v_zo:'Non fait',v_vrs:'Non fait',vsuite:['Rattrapage à signaler au médecin','Patient informé'],freq:'Non',modif:'Non',anti:'Non',ipp:'Oui',ipp_d:'Oméprazole 20 mg',ippi:'Inconnue',inh:'Oui',inh_d:'Salbutamol',ho:'Oui',ho_d:'Paracétamol',
+  gere:'Famille',pil:'Oui',ix_src:['RCP (base publique)','Thériaque'],ix_res:'Aucune interaction relevée',vsrc:['Patient','Mon espace santé'],v_dtp:'Ne sait pas',v_gr:'Fait',v_gr_y:'2025',v_co:'Fait',v_co_y:'2024, 4 doses',v_pn:'Non fait',v_zo:'Non fait',v_vrs:'Non fait',vsuite:['Rattrapage à signaler au médecin','Patient informé'],freq:'Non',modif:'Non',anti:'Non',ipp:'Oui',ipp_d:'Oméprazole 20 mg',ippi:'Inconnue',inh:'Oui',inh_d:'Salbutamol',ho:'Oui',ho_d:'Paracétamol',
   o1:'Non',o2:'Avec du retard',o3:'Non',o4:'Oui',poids:'58',creat:'95',dfg:'48',form:'CKD-EPI',motif:'Chute à domicile',atcd:'HTA\nDiabète de type 2\nAsthme',
   chute:'Oui',nch:'2',qch:['Aucune'],trb:['Vision','Constipation'],tab:'Non',alc:'Non',deg:'Non',mod:['Aucun'],qinh:'Non'};
  MEDS=[
-  {dci:'Amlodipine',forme:'cp',dos:'5 mg',p:['1','0','0','0'],s:{D:'ok',P:'ok',A:'',O:'ok',M:'ok'},v:{},st:'OK',rem:''},
-  {dci:'Metformine',forme:'cp',dos:'1000 mg',p:['1','0','1','0'],s:{D:'ok',P:'diff',A:'abs',O:'ok',M:'ok'},v:{P:'1 cp/j'},st:'Discordance',rem:'oublie le soir ?'},
+  {dci:'Amlodipine',forme:'cp',dos:'5 mg',p:['1','0','0','0'],s:{D:'ok',P:'ok',A:'',O:'ok',M:'ok'},v:{},st:'OK',rem:'',met:'hépatique, CYP3A4'},
+  {dci:'Metformine',forme:'cp',dos:'1000 mg',p:['1','0','1','0'],s:{D:'ok',P:'diff',A:'abs',O:'ok',M:'ok'},v:{P:'1 cp/j'},st:'Discordance',rem:'oublie le soir ?',met:'non métabolisée, élimination rénale'},
   {dci:'Paracétamol',forme:'cp',dos:'1 g',p:['','','',''],s:{D:'',P:'ok',A:'',O:'',M:''},v:{},st:'À vérifier',rem:'automédication'},
-  {dci:'Oméprazole',forme:'gél',dos:'20 mg',p:['1','0','0','0'],s:{D:'ok',P:'ok',A:'',O:'ok',M:''},v:{},st:'OK',rem:'indication à préciser'}];
+  {dci:'Oméprazole',forme:'gél',dos:'20 mg',p:['1','0','0','0'],s:{D:'ok',P:'ok',A:'',O:'ok',M:''},v:{},st:'OK',rem:'indication à préciser',met:'hépatique, CYP2C19 et 3A4'}];
  if(isChirDemo){S=Object.assign(S,{uf:'5890',nom:'TEST Jeanne (fictif)',iep:'000000',ddn:'1952-03-14',age:'74',chambre:'12B',telp:'',incl:'',vie:'',pili:'',obsr:'Non observant',o2:'Oui',
   epi:'Non',alc:'Non',tab:'Sevrage envisagé',tabc:'substituts',subn:'Oui',subn_d:'Patch nicotine 14 mg',stu:'Non',ir:'Oui',irt:'Chronique',ih:'Non',ic:'Non',irs:'Non',diab:'Type 2',acho:'2',trb:['Constipation'],modc:'Non',motif:'Prothèse totale de hanche programmée',atcd:'HTA\nDiabète de type 2\nTabagisme'})}
  render();
@@ -578,9 +591,9 @@ document.getElementById('demo').addEventListener('click',function(){
 
 var BASE=(/^https?:$/.test(location.protocol)&&!/claude|anthropic|usercontent/.test(location.hostname))?location.origin+location.pathname:'https://claude.ai/artifact/HEWsDwWbefVkbaYUHZgcp5';
 function payload(){var o={};for(var k in S){var v=S[k];if(!filled(v))continue;o[k]=v}
- var m=MEDS.filter(function(x){return filled(x.dci)}).map(function(x){return [x.dci,x.forme,x.dos,x.p,SRC.map(function(s){return x.s[s]==='diff'?'='+(x.v[s]||''):x.s[s]}),x.st,x.rem]});
+ var m=MEDS.filter(function(x){return filled(x.dci)}).map(function(x){return [x.dci,x.forme,x.dos,x.p,SRC.map(function(s){return x.s[s]==='diff'?'='+(x.v[s]||''):x.s[s]}),x.st,x.rem,x.met||'']});
  return {v:1,s:o,m:m}}
-function fromPayload(p){S=p.s||{};MEDS=(p.m||[]).map(function(a){var m=newMed();m.dci=a[0]||'';m.forme=a[1]||'';m.dos=a[2]||'';m.p=a[3]||['','','',''];(a[4]||[]).forEach(function(v,i){var s=SRC[i];if(v&&v.charAt(0)==='='){m.s[s]='diff';m.v[s]=v.slice(1)}else m.s[s]=v||''});m.st=a[5]||'';m.rem=a[6]||'';return m})}
+function fromPayload(p){S=p.s||{};MEDS=(p.m||[]).map(function(a){var m=newMed();m.dci=a[0]||'';m.forme=a[1]||'';m.dos=a[2]||'';m.p=a[3]||['','','',''];(a[4]||[]).forEach(function(v,i){var s=SRC[i];if(v&&v.charAt(0)==='='){m.s[s]='diff';m.v[s]=v.slice(1)}else m.s[s]=v||''});m.st=a[5]||'';m.rem=a[6]||'';m.met=a[7]||'';return m})}
 function b64u(u8){var s='';for(var i=0;i<u8.length;i++)s+=String.fromCharCode(u8[i]);return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')}
 function unb64u(t){t=t.replace(/-/g,'+').replace(/_/g,'/');while(t.length%4)t+='=';var s=atob(t),u=new Uint8Array(s.length);for(var i=0;i<s.length;i++)u[i]=s.charCodeAt(i);return u}
 async function pipe(u8,stream){var r=new Response(new Blob([u8]).stream().pipeThrough(stream));return new Uint8Array(await r.arrayBuffer())}
@@ -605,27 +618,28 @@ function pSection(sec){
  if(sec.id==='src'){var t=E('table');var h=E('tr');['Code','Source','Nom · téléphone · mail','Obtenue'].forEach(function(x){h.appendChild(E('th','',x))});t.appendChild(h);
   sec.f.forEach(function(f){if(f.t!=='src')return;var r=E('tr');var c=E('td','c');c.appendChild(E('span','code',f.c));r.appendChild(c);r.appendChild(E('td','',f.l));r.appendChild(E('td','ink',S[f.k+'_c']||''));var o=E('td');o.appendChild(opt('oui',S[f.k+'_ok']==='Obtenue'));o.appendChild(opt('non',S[f.k+'_ok']==='Non'));r.appendChild(o);t.appendChild(r)});
   frag.appendChild(t);return frag}
- var bx=E('div','abox');sec.f.forEach(function(f){if(f.t==='hint'||f.t==='meds'||f.t==='vbtn')return;bx.appendChild(pItem(f))});frag.appendChild(bx);return frag}
+ var bx=E('div','abox');sec.f.forEach(function(f){if(f.t==='hint'||f.t==='meds'||f.t==='vbtn'||f.t==='links')return;bx.appendChild(pItem(f))});frag.appendChild(bx);return frag}
 function pPage(land,sub){var p=E('div','a4'+(land?' land':''));var hd=E('div','hd');var t=E('div');t.appendChild(E('h1','',land?'Bilan médicamenteux : recueil par source':title()));t.appendChild(E('div','sub',sub));hd.appendChild(t);var pn=E('div','ptn','Patient n° ');pn.appendChild(E('span','ink',S.pt||''));hd.appendChild(pn);p.appendChild(hd);return p}
 function bilanPage(){
  var p=pPage(true,'Une ligne par médicament · ✓ confirme · ✗ absent · valeur = diffère · vide = non consultée');
- var t=E('table');var h1=E('tr');['#','DCI','Forme','Dosage','M','Mi','S','N'].concat(SRC).concat(['Statut','Remarque']).forEach(function(x,i){var th=E('th',(i>=4&&i<=12)?'c':'');if(SRC.indexOf(x)>=0&&i>7){th.appendChild(E('span','code',x))}else th.textContent=x;h1.appendChild(th)});t.appendChild(h1);
+ var t=E('table');var h1=E('tr');['#','DCI','Forme','Dosage','M','Mi','S','N'].concat(SRC).concat(['Métabolisme','Statut','Remarque']).forEach(function(x,i){var th=E('th',(i>=4&&i<=12)?'c':'');if(SRC.indexOf(x)>=0&&i>7){th.appendChild(E('span','code',x))}else th.textContent=x;h1.appendChild(th)});t.appendChild(h1);
  var ms=MEDS.filter(function(m){return filled(m.dci)});var n=Math.max(15,ms.length);
  for(var i=0;i<n;i++){var m=ms[i];var r=E('tr');r.style.height='31px';r.appendChild(E('td','c',String(i+1)));
   if(m){[m.dci,m.forme,m.dos].forEach(function(x){r.appendChild(E('td','ink',x||''))});m.p.forEach(function(x){r.appendChild(E('td','c ink',x||''))});
    SRC.forEach(function(s){var st=m.s[s];r.appendChild(E('td','c ink'+(st==='diff'?' df':''),st==='ok'?'✓':st==='abs'?'✗':st==='diff'?(m.v[s]||'≠'):''))});
-   r.appendChild(E('td','ink',m.st||''));r.appendChild(E('td','ink',m.rem||''))}
-  else for(var j=0;j<14;j++)r.appendChild(E('td'));
+   r.appendChild(E('td','ink',m.met||''));r.appendChild(E('td','ink',m.st||''));r.appendChild(E('td','ink',m.rem||''))}
+  else for(var j=0;j<15;j++)r.appendChild(E('td'));
   t.appendChild(r)}
  p.appendChild(t);return p}
 function over(pg){var last=pg.lastElementChild;return last.getBoundingClientRect().bottom-pg.getBoundingClientRect().top>pg.clientHeight-28-24}
 function buildPages(){
  var host=document.getElementById('print');host.innerHTML='';var pages=[];
  var cur=pPage(false,'Recueil d\u2019informations');host.appendChild(cur);pages.push(cur);
- SECTIONS.forEach(function(sec){if(sec.id==='bil'||sec.id==='inh')return;
+ SECTIONS.forEach(function(sec){if(sec.id==='bil'||sec.id==='inh'||sec.id==='ix')return;
   var frag=pSection(sec);var nodes=Array.prototype.slice.call(frag.childNodes);cur.appendChild(frag);
   if(over(cur)){nodes.forEach(function(n){cur.removeChild(n)});cur=pPage(false,'Recueil d\u2019informations (suite)');host.appendChild(cur);pages.push(cur);nodes.forEach(function(n){cur.appendChild(n)})}});
  var bp=bilanPage();host.appendChild(bp);pages.push(bp);
+ var ixs=SECTIONS.filter(function(x){return x.id==='ix'})[0];if(ixs){var xp=pPage(false,'Analyse des interactions médicamenteuses');xp.appendChild(pSection(ixs));host.appendChild(xp);pages.push(xp)}
  var inh=SECTIONS.filter(function(x){return x.id==='inh'})[0];
  if(inh&&S.qinh==='Oui'||Object.keys(S).some(function(k){return k.indexOf('i_')===0&&filled(S[k])})){var ip=pPage(false,'Questionnaire inhalateurs · d\u2019après la fiche de [Dr NOM], docteure junior');ip.querySelector('h1').textContent='Observance et bon usage des traitements inhalés';ip.appendChild(pSection(inh));host.appendChild(ip);pages.push(ip)}
  var today=new Date().toLocaleDateString('fr-FR');
